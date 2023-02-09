@@ -293,8 +293,8 @@ cursor = conn.cursor()
 truncate_statement = 'TRUNCATE TABLE category'
 cursor.execute(truncate_statement)
 
-aws_access_key_id = 'AKIAZMDJPUWXRRRRPQ5K'
-aws_secret_access_key = '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'
+aws_access_key_id = ''
+aws_secret_access_key = ''
 
 import os
 os.environ.setdefault('AWS_ACCESS_KEY_ID', aws_access_key_id)
