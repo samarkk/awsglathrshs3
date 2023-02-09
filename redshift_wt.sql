@@ -206,3 +206,250 @@ from spectrum.sales, event
 where spectrum.sales.eventid = salesdb.public.event.eventid
 and spectrum.sales.pricepaid > 30
 group by spectrum.sales.eventid
+
+-- psql -h database-1.cgmmakgnsaxs.us-east-1.rds.amazonaws.com -p 5432 -U postgres -W
+create user salesdbuser  with password 'Admin98919';
+grant all on database salesdb to salesdbuser;
+grant all on all tables in schema public to salesdbuser;
+-- -h database-1.cgmmakgnsaxs.us-east-1.rds.amazonaws.com -p 5432 -U salesdb_user -d salesdb -W
+
+create table if not exists category(
+	catid smallint not null ,
+	catgroup varchar(10),
+	catname varchar(10),
+	catdesc varchar(50));
+
+\copy category(catid, catgroup, catname, catdesc) from 'D:/dloads/tickit/category_pipe.txt' WITH DELIMITER '|' CSV HEADER;
+
+-- create rds_secret for database using user name and password
+-- note down the arn for the secret 
+-- arn:aws:secretsmanager:us-east-1:644466320815:secret:rds_postgres_secret-7SLQYB
+-- create a policy rdsSecretAccess
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AccessSecret",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetResourcePolicy",
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:ListSecretVersionIds"
+            ],
+            "Resource": "arn:aws:secretsmanager:us-east-1:644466320815:secret:rds_postgres_secret-7SLQYB"
+        },
+        {
+            "Sid": "VisualEditor1",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetRandomPassword",
+                "secretsmanager:ListSecrets"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+-- attach policy to myredshiftfullaccessrole
+-- the arn for myredshiftfullaccessrole
+-- arn:aws:iam::644466320815:role/myredshiftfullaccessrole
+-- and verify redshift.amazonaws.com in Trusted entities under the Trust Relationships tab
+CREATE EXTERNAL SCHEMA apg
+FROM POSTGRES
+DATABASE 'salesdb' SCHEMA 'tickitpg'
+URI 'database-1.cgmmakgnsaxs.us-east-1.rds.amazonaws.com'
+IAM_ROLE ' arn:aws:iam::644466320815:role/myredshiftfullaccessrole'
+SECRET_ARN 'arn:aws:secretsmanager:us-east-1:644466320815:secret:rds_postgres_secret-7SLQYB';
+
+/*
+python3 -m venv rshift
+Scripts\activate.bat
+pip install psycopg2-binary
+pip install boto3
+pip install jupyterlab
+
+import psycopg2
+
+Host = 'my-cluster.cun6wpx0iczb.us-east-1.redshift.amazonaws.com'
+Port = 5439
+Database = 'salesdb'
+User = 'awsuser'
+Password = 'Admin98919'
+
+conn = psycopg2.connect(host = Host, port = Port, 
+database=Database, user=User, password = Password)
+
+cursor = conn.cursor()
+
+query_str = 'SELECT * FROM SALES LIMIT 10'
+
+cursor.execute(query_str)
+for rec in cursor:
+    print(rec)
+
+cursor.close()
+
+cursor = conn.cursor()
+truncate_statement = 'TRUNCATE TABLE category'
+cursor.execute(truncate_statement)
+
+aws_access_key_id = 'AKIAZMDJPUWXRRRRPQ5K'
+aws_secret_access_key = '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'
+
+import os
+os.environ.setdefault('AWS_ACCESS_KEY_ID', aws_access_key_id)
+os.environ.setdefault('AWS_SECRET_ACCESS_KEY', aws_secret_access_key)
+
+import boto3
+s3_client = boto3.client('s3')
+s3_client.list_buckets()
+s3_objects = s3_client.list_objects(
+    Bucket = 'findbkt', 
+    Prefix = 'cm/yr=2022/mnth=11'
+)
+s3_objects['Contents']
+[obj['Key'] for obj in s3_objects['Contents']]
+
+copy_stattement = """
+copy category from 's3://tickit-samar/tickit/category_pipe.txt' 
+iam_role 'arn:aws:iam::644466320815:role/service-role/AmazonRedshift-CommandsAccessRole-20230127T130200'
+delimiter '|' region 'us-east-1'
+"""
+copy_statement_credentials = """
+copy category from 's3://tickit-samar/tickit/category_pipe.txt' 
+CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_acces_key={aws_secret_access_key}'
+delimiter '|' region 'us-east-1'
+"""
+*/
+
+-- using boto3 to query redshift
+-- create a secret using secrets manager, choose credentials for other database, enter user name as salesdb_user, password as Admin98919, choose postgresql as the databbase, in the server address enter endpoint without the port and the database, enter the database as salesdb and port as 5439 and save it give it a name
+-- note down the secret arn
+-- arn:aws:secretsmanager:us-east-1:644466320815:secret:redshift-salesdbuser-secret-164cb2
+-- so for the secret we have entered host, port, database, user, password  - thus we should be able to connect to redshift using this secret arn
+-- create policy and attach it to user permissions so that the code executed by the user can use the secret created
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AccessSecret",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetResourcePolicy",
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:ListSecretVersionIds"
+            ],
+            "Resource": "arn:aws:secretsmanager:us-east-1:644466320815:secret:redshift_secret-fI7A8Y"
+        },
+        {
+            "Sid": "VisualEditor1",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetRandomPassword",
+                "secretsmanager:ListSecrets"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+create copy_to_rstable.py to copy the data from files in AWS s3 to Redshift table using Boto3
+
+import os
+import boto3
+from botocore.waiter import WaiterModel
+from botocore.waiter import create_waiter_with_client
+from botocore.exceptions import WaiterError
+
+
+def get_waiter_config(waiter_name):
+    delay = int(os.environ.get('REDSHIFT_QUERY_DELAY'))
+    max_attempts = int(os.environ.get('REDSHIFT_QUERY_MAX_ATTEMPTS'))
+
+    #Configure the waiter settings
+    waiter_config = {
+      'version': 2,
+      'waiters': {
+        'DataAPIExecution': {
+          'operation': 'DescribeStatement',
+          'delay': delay,
+          'maxAttempts': max_attempts,
+          'acceptors': [
+            {
+              "matcher": "path",
+              "expected": "FINISHED",
+              "argument": "Status",
+              "state": "success"
+            },
+            {
+              "matcher": "pathAny",
+              "expected": ["PICKED","STARTED","SUBMITTED"],
+              "argument": "Status",
+              "state": "retry"
+            },
+            {
+              "matcher": "pathAny",
+              "expected": ["FAILED","ABORTED"],
+              "argument": "Status",
+              "state": "failure"
+            }
+          ],
+        },
+      },
+    }
+    return waiter_config
+
+
+def get_redshift_waiter_client(rsd_client):
+    waiter_name = 'DataAPIExecution'
+
+    waiter_config = get_waiter_config(waiter_name)
+    waiter_model = WaiterModel(waiter_config)
+    return create_waiter_with_client(waiter_name, waiter_model, rsd_client)
+
+
+def copy_s3_to_rstable(bucket_name, secret_arn, table_name, data_file):
+    rsd_client = boto3.client('redshift-data')
+
+    rs_copy_command=f'''
+    copy {table_name} from 's3://{bucket_name}/tickit/{data_file}' 
+    iam_role 'arn:aws:iam::644466320815:role/service-role/AmazonRedshift-CommandsAccessRole-20230127T130200'
+    delimiter '|' region 'us-east-1';
+'''
+    rs_copy_command_id = rsd_client.execute_statement(
+        ClusterIdentifier = 'my-cluster',
+        Database = 'salesdb',
+        Sql = rs_copy_command,
+        SecretArn = secret_arn
+    )['Id']
+    custom_waiter = get_redshift_waiter_client(rsd_client)
+    try:
+        custom_waiter.wait(Id=rs_copy_command_id)    
+    except WaiterError as e:
+        print (e)
+    return rsd_client.describe_statement(Id=rs_copy_command_id)['Status']
+
+
+# add the lambda handler code
+import boto3
+from copy_to_rstable import copy_s3_to_rstable
+
+
+def lambda_handler(event, context):
+    print(f'boto3 version: {boto3.__version__}')
+    try:
+        bucket_name = event['Bucket']
+        secret_arn = event['SecretArn']
+        table_name = event['TableName']
+        data_file = event['DataFile']
+        copy_res = copy_s3_to_rstable(bucket_name, secret_arn, table_name, data_file)
+    except:
+        raise
+    return  {
+        'statusCode': 200,
+        'statement_status': copy_res
+    }
+
+# go to the lambda configuration tab and add permissions by creating an inline policy and allowing list and read permissions in secrets manager to resource secret arn - get it from the secrets manager or refer to the arn copied above earlier
+# attach the AmazonRedshiftDataFullAccessPolicy
